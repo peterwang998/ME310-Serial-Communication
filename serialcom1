@@ -1,0 +1,161 @@
+/*
+  ME310 controller serial communcation code
+
+  Davis Born, Peter Wang, Monica Caravias
+ */
+
+#include <SoftwareSerial.h>
+SoftwareSerial mySerial(9,10);  // Rx, Tx
+
+ int JS1Pin = A0;
+ int JS2Pin = A1;
+ int ButtonPin = A2;
+
+ // Joystick B
+ int JS1Value;    // lo: 0, mid: 509, hi: 1023
+ int JS2Value;    // lo: 0, mid: 503, hi: 1023
+ int ButtonValue; // lo: 0, hi: 1023
+
+ unsigned char cksum[] = {0,0};
+ //int cbuf[];
+ unsigned char prompt = '?';
+ unsigned char msg;
+ unsigned char echo[8];
+ unsigned char M1cmd[] = {'M','1',' ','+','N',' ','X','X'};
+ unsigned char M2cmd[] = {'M','2',' ','+','N',' ','X','X'};
+ bool pass = true;
+ int temp = 0;
+ int arrSize = 8;
+
+void setup() {
+  // initialize serial communication at 9600 bits per second:
+  Serial.begin(9600);
+  while(!Serial){}
+  mySerial.begin(9600); // for serial output (argument is baud rate)
+}
+
+void loop() {
+  JS1Value = analogRead(JS1Pin);
+  JS2Value = analogRead(JS2Pin);
+  ButtonValue = analogRead(ButtonPin);
+
+  // Get and encode motor 1 command
+  JS1Value = (int)map(JS1Value, 0, 1023, -9, 9)+1;
+  M1cmd[3] = (JS1Value > 0) ? '+' : '-';
+  M1cmd[4] = (String((abs(JS1Value))))[0];
+  calc_robotcmd_chksum(M1cmd,6,cksum);
+  M1cmd[6] = (String(cksum[0]))[0];
+  M1cmd[7] = (String(cksum[1]))[0];
+
+  // Get and encode motor 2 command
+  JS2Value = (int)map(JS2Value, 0, 1023, -9, 9)+1;
+  M2cmd[3] = (JS2Value > 0) ? '+' : '-';
+  M2cmd[4] = (String((abs(JS2Value))))[0];
+  calc_robotcmd_chksum(M2cmd,6,cksum);
+  M2cmd[6] = (String(cksum[0]))[0];
+  M2cmd[7] = (String(cksum[1]))[0];
+
+  // Wait for prompt character
+  do{
+      Serial.println("Waiting for M1 prompt");
+      while(!mySerial.available()){}
+      Serial.println("Received something...");
+      msg = mySerial.read();
+      Serial.print(String(msg,HEX));
+      Serial.println();
+      flush();
+  } while(msg != prompt);
+
+  Serial.println("Prompted");
+  
+  // Write motor 1 command. Keep trying until successful.
+  do{ writeCmd(M1cmd); } while(!pass);
+
+  // Reset flag
+  pass = true;
+
+  // Wait for prompt
+  do{
+    Serial.println("Waiting for M2 prompt");
+    while(!mySerial.available()){}
+    Serial.println("Received something...");
+    msg = mySerial.read();
+    Serial.write(msg);
+    Serial.println();
+    flush();
+  } while(msg != prompt);
+  
+  Serial.println("Prompted");
+  
+  // Write motor 2 command. Keep trying until successful.
+  do{ writeCmd(M2cmd); } while(!pass);
+  
+
+  pass = true;
+}
+
+ #define ROBOTCMDLEN    6    // "MD +N "
+
+unsigned char tohex(byte x) // convert nibble value to hex-ascii char
+{
+  x &= 0x0f;
+  if (x < 10) return (x + '0');
+  return (x - 10 + 'A');
+}
+
+void calc_robotcmd_chksum(unsigned char cbuf[], int cbuflen, unsigned char cksum[] )
+{
+  // cbuf: array of chars holding the received robot command
+  // cbuflen: length of chars with which to calculate checksum
+  // cksum: array of chars to hold checksum as hex-ascii
+
+  byte hexsum = 0;                // variable to calc checksum
+  for (int i = 0; i < cbuflen; i++) {
+    hexsum ^= cbuf[i];
+  }
+
+  // save calculated checksum as hex-ascii for comparison and validation
+  // NOTE: use of hex-ascii is easier to view and debug via Serial Monitor
+  cksum[0] = tohex((hexsum >> 4) & 0x0f);
+  cksum[1] = tohex(hexsum & 0x0f);
+}
+
+void writeCmd(unsigned char cmd[]){
+    mySerial.write(cmd,arrSize);
+    
+    Serial.print("sending: ");
+    int temp = Serial.write(cmd,arrSize);
+    Serial.println();
+    
+    while(mySerial.available() < arrSize){
+      Serial.print("number of bytes: ");
+      Serial.println(temp);
+      Serial.print("number available: ");
+      Serial.println(mySerial.available());
+    }
+
+    for(int i = 0; i < arrSize; i++){
+      echo[i] = mySerial.read();
+    }
+
+    flush();
+    
+    Serial.print("echo: ");
+    Serial.write(echo,arrSize);
+    Serial.println();
+    
+    for(int i = 0; i < arrSize; i++){
+      if(echo[i] != cmd[i]){
+        pass = false;
+        break;
+      }
+    }
+}
+
+void flush(){
+  while(mySerial.available()){
+    Serial.println("flushing...");
+    Serial.print(String(mySerial.read(),HEX));
+    Serial.println();
+  }
+}
