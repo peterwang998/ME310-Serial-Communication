@@ -1,0 +1,55 @@
+/*
+  ME310 controller serial communcation test code
+  Robot Emulator
+  Davis Born, Peter Wang, Monica Caravias
+ */
+
+#include <SoftwareSerial.h>
+SoftwareSerial mySerial(9,10);  // Rx, Tx
+
+unsigned char echo[8];
+int arrSize = 8;
+
+void setup() {
+  Serial.begin(9600); // for serial output (argument is baud rate)
+  while(!Serial){}
+  mySerial.begin(9600);
+}
+
+void loop() {
+
+// Preparing to send 
+  Serial.write("preparing to send '?' ");
+  Serial.println();
+
+// Stays in a while loop until the serial input is actually ?
+  while(Serial.read() != '?') {}
+//  unsigned char temp = '?';
+  Serial.write('?');
+  Serial.println();
+//  Serial.write(temp);
+//  Serial.println();
+  mySerial.write('?');
+
+// Post sending check
+  Serial.write("sent '?' ");
+  Serial.println();
+  
+  while(mySerial.available() < arrSize){}
+
+  Serial.print("Rec'd: ");
+  Serial.println();
+  
+  for(int i = 0; i < arrSize; i++){
+    echo[i] = mySerial.read();
+  }
+
+// clearing mySerial
+  while(mySerial.available()) mySerial.read();
+
+  Serial.write(echo, arrSize);
+  Serial.println();
+
+// Sending the echo back
+  mySerial.write(echo, arrSize);
+}
